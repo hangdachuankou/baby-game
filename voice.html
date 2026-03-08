@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>おもしろボイス</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@800&display=swap');
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #E0F7FA;
+            overflow: hidden;
+            touch-action: none; /* Prevent zooming and scrolling */
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: background-color 0.3s;
+        }
+
+        #status-text {
+            position: absolute;
+            top: 15%;
+            font-size: 2.5rem;
+            color: #00838F;
+            text-align: center;
+            z-index: 10;
+            pointer-events: none;
+            text-shadow: 2px 2px 0px #fff;
+        }
+
+        /* Cute Character */
+        #character {
+            width: 250px;
+            height: 250px;
+            background-color: #FFCA28;
+            border-radius: 50%;
+            position: relative;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Face elements */
+        .eyes {
+            display: flex;
+            gap: 40px;
+            margin-bottom: 20px;
+        }
+
+        .eye {
+            width: 30px;
+            height: 40px;
+            background-color: #333;
+            border-radius: 50%;
+            position: relative;
+            transition: height 0.2s, transform 0.2s;
+        }
+
+        .eye::after {
+            content: '';
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 10px;
+            height: 10px;
+            background-color: white;
+            border-radius: 50%;
+        }
+
+        .mouth {
+            width: 60px;
+            height: 30px;
+            background-color: #D32F2F;
+            border-radius: 0 0 40px 40px;
+            transition: all 0.2s;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .tongue {
+            position: absolute;
+            bottom: -5px;
+            left: 10px;
+            width: 40px;
+            height: 20px;
+            background-color: #FF5252;
+            border-radius: 20px 20px 0 0;
+        }
+
+        /* States via classes on body */
+        body.ready #character {
+            animation: bounce 2s infinite alternate;
+        }
+
+        body.recording {
+            background-color: #FFEBEE;
+        }
+
+        body.recording #character {
+            transform: scale(1.1);
+            background-color: #FF7043;
+            box-shadow: 0 0 50px rgba(255, 112, 67, 0.5);
+        }
+
+        body.recording .eye {
+            height: 50px;
+            border-radius: 50%;
+        }
+
+        body.recording .mouth {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+        }
+
+        body.playing {
+            background-color: #E8F5E9;
+        }
+
+        body.playing #character {
+            animation: shake 0.5s infinite;
+            background-color: #66BB6A;
+        }
+
+        body.playing .eye {
+            height: 15px;
+            transform: translateY(10px);
+        }
+
+        body.playing .mouth {
+            width: 80px;
+            height: 40px;
+            border-radius: 40px;
+            background-color: #fff;
+            border: 4px solid #333;
+        }
+        body.playing .tongue {
+            display: none;
+        }
+
+        @keyframes bounce {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-20px); }
+        }
+
+        @keyframes shake {
+            0% { transform: rotate(-5deg); }
+            50% { transform: rotate(5deg); }
+            100% { transform: rotate(-5deg); }
+        }
+
+    </style>
+</head>
+<body class="setup">
+
+    <div id="status-text">タッチしてスタート！</div>
+    
+    <div id="character">
+        <div class="eyes">
+            <div class="eye"></div>
+            <div class="eye"></div>
+        </div>
+        <div class="mouth">
+            <div class="tongue"></div>
+        </div>
+    </div>
+
+    <script>
+        const statusText = document.getElementById('status-text');
+        
+        let audioCtx;
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        let isPlaying = false;
+        let hasSetup = false;
+        let currentSource = null;
+
+        // Start setup on first touch
+        document.body.addEventListener('pointerdown', async (e) => {
+            if (isPlaying) return; // Ignore input while playing
+
+            if (!hasSetup) {
+                hasSetup = true;
+                await initAudio();
+                return;
+            }
+
+            startRecording();
+        });
+
+        document.body.addEventListener('pointerup', () => {
+            if (isRecording) {
+                stopRecording();
+            }
+        });
+        document.body.addEventListener('pointercancel', () => {
+            if (isRecording) {
+                stopRecording();
+            }
+        });
+        document.body.addEventListener('pointerleave', () => {
+            if (isRecording) {
+                stopRecording();
+            }
+        });
+
+        async function initAudio() {
+            statusText.innerText = "マイクの許可をお願いします...";
+            try {
+                // Initialize Web Audio
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                }
+
+                // Request Mic access
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                
+                // Initialize MediaRecorder
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
+                        audioChunks.push(e.data);
+                    }
+                };
+
+                mediaRecorder.onstop = async () => {
+                    await playAudio();
+                };
+
+                document.body.className = 'ready';
+                statusText.innerText = "さわって おはなししてね！";
+
+            } catch (err) {
+                console.error('Error accessing microphone:', err);
+                statusText.innerText = "マイクが使えません😢";
+                hasSetup = false; // allow retry
+            }
+        }
+
+        function startRecording() {
+            if (!mediaRecorder || mediaRecorder.state !== 'inactive') return;
+            
+            isRecording = true;
+            audioChunks = [];
+            mediaRecorder.start();
+            
+            document.body.className = 'recording';
+            statusText.innerText = "ろくおんちゅう...";
+        }
+
+        function stopRecording() {
+            if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+            
+            isRecording = false;
+            mediaRecorder.stop(); // triggers onstop -> playAudio
+            
+            document.body.className = 'playing';
+            statusText.innerText = "まってるよ...";
+        }
+
+        async function playAudio() {
+            if (audioChunks.length === 0) {
+                resetReady();
+                return;
+            }
+
+            isPlaying = true;
+            statusText.innerText = "へんなこえ！";
+            document.body.className = 'playing';
+
+            const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+            const arrayBuffer = await audioBlob.arrayBuffer();
+            
+            try {
+                const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                
+                currentSource = audioCtx.createBufferSource();
+                currentSource.buffer = audioBuffer;
+                
+                // --- MAGIC HAPPENS HERE ---
+                // Increase pitch and speed to sound funny!
+                currentSource.playbackRate.value = 1.6 + Math.random() * 0.4; // between 1.6 and 2.0
+                
+                currentSource.connect(audioCtx.destination);
+                currentSource.onended = () => {
+                    resetReady();
+                };
+                
+                currentSource.start();
+            } catch (e) {
+                console.error("Error decoding audio", e);
+                resetReady();
+            }
+        }
+
+        function resetReady() {
+            isPlaying = false;
+            isRecording = false;
+            document.body.className = 'ready';
+            statusText.innerText = "さわって おはなししてね！";
+        }
+    </script>
+</body>
+</html>
