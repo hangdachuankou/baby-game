@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>あかちゃん タッチゲーム</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@800&display=swap');
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #fdf5e6; /* OldLace - soft warm background */
+            overflow: hidden;
+            touch-action: none; /* Prevent zooming and scrolling */
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+        }
+
+        #title {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3rem;
+            color: #dcdcdc;
+            text-align: center;
+            pointer-events: none; /* Allow clicking through the text */
+            z-index: 1;
+            transition: opacity 0.5s;
+        }
+
+        .shape {
+            position: absolute;
+            pointer-events: none;
+            transform-origin: center center;
+            z-index: 10;
+            animation: popAndFade 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+        }
+
+        @keyframes popAndFade {
+            0% {
+                transform: translate(-50%, -50%) scale(0) rotate(0deg);
+                opacity: 1;
+            }
+            40% {
+                transform: translate(-50%, -50%) scale(1.1) rotate(15deg);
+                opacity: 1;
+            }
+            70% {
+                transform: translate(-50%, -50%) scale(1) rotate(30deg);
+                opacity: 0.8;
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(1.5) rotate(45deg);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="title">画面をタッチしてみてね！</div>
+    <div id="game-area"></div>
+
+    <script>
+        const gameArea = document.getElementById('game-area');
+        const titleArea = document.getElementById('title');
+        
+        // Bright, cheerful colors for babies
+        const colors = [
+            '#FF355E', // Radical Red
+            '#FF9933', // Neon Carrot
+            '#FFCC33', // Sunglow
+            '#A0E6FF', // Magic Mint
+            '#4DFF33', // Screamin Green
+            '#33CCFF', // Vivid Cerulean
+            '#B033FF', // Purple Pizzazz
+            '#FF33AB'  // Pink Flamingo
+        ];
+        
+        const shapes = ['circle', 'square', 'triangle', 'star', 'heart'];
+
+        // Initialized later on first interaction to avoid AudioContext warnings on page load
+        let audioCtx = null;
+        let isFirstInteraction = true;
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        // Play a pleasant marimba-like or pluck sound
+        function playPopSound() {
+            if (!audioCtx) return;
+            
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            // "sine" or "triangle" are soft and pleasant
+            oscillator.type = 'triangle';
+            
+            // Random pitch in a pleasant range (pentatonic scale approx)
+            const notes = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25, 783.99, 880.00];
+            const pitch = notes[Math.floor(Math.random() * notes.length)];
+            
+            oscillator.frequency.setValueAtTime(pitch, audioCtx.currentTime);
+            
+            // Envelopes for a percussive pluck sound
+            gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.02);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.5);
+        }
+
+        function createShape(x, y) {
+            const el = document.createElement('div');
+            el.className = 'shape';
+            el.style.left = x + 'px';
+            el.style.top = y + 'px';
+            
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            const shapeType = shapes[Math.floor(Math.random() * shapes.length)];
+            const size = 80 + Math.random() * 80; // 80px to 160px
+
+            el.style.width = size + 'px';
+            el.style.height = size + 'px';
+
+            if (shapeType === 'circle') {
+                el.style.borderRadius = '50%';
+                el.style.backgroundColor = color;
+            } else if (shapeType === 'square') {
+                el.style.backgroundColor = color;
+                el.style.borderRadius = '20px'; // Soft square
+            } else if (shapeType === 'triangle') {
+                el.style.width = '0';
+                el.style.height = '0';
+                el.style.borderLeft = (size/2) + 'px solid transparent';
+                el.style.borderRight = (size/2) + 'px solid transparent';
+                el.style.borderBottom = size + 'px solid ' + color;
+                el.style.backgroundColor = 'transparent';
+                el.style.boxShadow = 'none'; // Box shadow behaves weirdly on border triangles
+                // Hack to add shadow to triangle using filter if supported
+                el.style.filter = 'drop-shadow(0px 10px 10px rgba(0,0,0,0.15))';
+            } else if (shapeType === 'star') {
+                el.style.backgroundColor = color;
+                el.style.clipPath = 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)';
+            } else if (shapeType === 'heart') {
+                el.style.backgroundColor = color;
+                // Clip path for heart
+                el.style.clipPath = 'path("M 50 15 C 50 15 45 0 25 0 C 5 0 0 20 0 30 C 0 45 25 70 50 95 C 75 70 100 45 100 30 C 100 20 95 0 75 0 C 55 0 50 15 50 15 Z")';
+                // Note: path() in clip-path might not scale well without an SVG viewBox wrapper, so let's fallback to a simpler polygon or just another shape if this breaks. Actually, CSS polygon is safer for broad compatibility, but let's stick to a simpler path or just don't use clip-path for heart and use standard CSS heart tricks.
+                // Let's replace heart with a simple diamond for robust rendering.
+                el.style.clipPath = 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)'; 
+            }
+
+            gameArea.appendChild(el);
+
+            setTimeout(() => {
+                if (el.parentNode) {
+                    el.remove();
+                }
+            }, 1200); // corresponds to animation duration
+        }
+
+        // Add some nice particles
+        function createParticles(x, y, color) {
+            for (let i = 0; i < 5; i++) {
+                const particle = document.createElement('div');
+                particle.style.position = 'absolute';
+                particle.style.left = x + 'px';
+                particle.style.top = y + 'px';
+                particle.style.width = '15px';
+                particle.style.height = '15px';
+                particle.style.backgroundColor = color;
+                particle.style.borderRadius = '50%';
+                particle.style.pointerEvents = 'none';
+                
+                // Random destination
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 50 + Math.random() * 50;
+                const destX = Math.cos(angle) * distance;
+                const destY = Math.sin(angle) * distance;
+                
+                particle.animate([
+                    { transform: 'translate(-50%, -50%) scale(1)', opacity: 1 },
+                    { transform: `translate(calc(-50% + ${destX}px), calc(-50% + ${destY}px)) scale(0)`, opacity: 0 }
+                ], {
+                    duration: 600 + Math.random() * 400,
+                    easing: 'cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+                });
+                
+                gameArea.appendChild(particle);
+                setTimeout(() => particle.remove(), 1000);
+            }
+        }
+
+        function handleInteraction(e) {
+            e.preventDefault();
+
+            if (isFirstInteraction) {
+                initAudio();
+                titleArea.style.opacity = '0';
+                isFirstInteraction = false;
+            }
+
+            // Support multitouch
+            if (e.touches && e.touches.length > 0) {
+                for (let i = 0; i < e.touches.length; i++) {
+                    const touch = e.touches[i];
+                    spawn(touch.clientX, touch.clientY);
+                }
+            } else {
+                spawn(e.clientX, e.clientY);
+            }
+        }
+        
+        function spawn(x, y) {
+            createShape(x, y);
+            createParticles(x, y, '#FFF'); // Little white sparkles
+            playPopSound();
+        }
+
+        // Use pointerdown to handle both mouse and single touch nicely, 
+        // but we'll use touchstart directly to handle multi-touch better
+        document.addEventListener('touchstart', handleInteraction, {passive: false});
+        document.addEventListener('mousedown', handleInteraction);
+
+    </script>
+</body>
+</html>
